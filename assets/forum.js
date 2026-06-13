@@ -45,7 +45,9 @@
     s.id = STYLE_ID;
     s.textContent =
       '.cvf{width:100%;text-align:left}' +
-      '.cvf-accent{height:3px;width:100%;border-radius:2px;margin-bottom:26px;background:linear-gradient(90deg,rgb(var(--c-primary)),rgb(var(--c-accent,var(--c-primary))))}' +
+      // Fallback accent (used only when the footer is not inside a <footer> we
+      // can border). Full-bleed via the negative-margin trick.
+      '.cvf-accent{height:3px;width:100vw;margin-left:calc(50% - 50vw);margin-top:-26px;margin-bottom:26px;background:linear-gradient(90deg,rgb(var(--c-primary)),rgb(var(--c-accent,var(--c-primary))))}' +
       '.cvf-main{display:flex;flex-wrap:wrap;justify-content:space-between;gap:36px;padding-bottom:26px}' +
       '.cvf-brand{flex:1 1 240px;max-width:360px;min-width:200px}' +
       '.cvf-logo{height:30px;width:auto;display:block}' +
@@ -61,10 +63,14 @@
       '.cvf-col ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}' +
       '.cvf-col a{color:rgb(var(--c-muted));font-size:13.5px;transition:color .12s}' +
       '.cvf-col a:hover{color:rgb(var(--c-primary))}' +
-      '.cvf-bottom{border-top:1px solid rgb(var(--c-border));padding-top:18px;display:flex;justify-content:center;text-align:center;color:rgb(var(--c-muted));font-size:13px}' +
+      '.cvf-bottom{border-top:1px solid rgb(var(--c-border));padding-top:18px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;color:rgb(var(--c-muted));font-size:13px}' +
+      '.cvf-copy{flex:1 1 auto}' +
+      '.cvf-utility{display:flex;flex-wrap:wrap;gap:8px;align-items:center}' +
+      '.cvf-utility a,.cvf-util-link{color:rgb(var(--c-muted))!important;font-size:12.5px!important;text-decoration:none!important;padding:5px 11px;border:1px solid rgb(var(--c-border));border-radius:999px;transition:color .15s,border-color .15s;line-height:1.2}' +
+      '.cvf-utility a:hover,.cvf-util-link:hover{color:rgb(var(--c-primary))!important;border-color:rgb(var(--c-primary))}' +
       '#cvf-top{position:fixed;left:20px;bottom:20px;width:42px;height:42px;border-radius:12px;border:0;cursor:pointer;display:grid;place-items:center;background:rgb(var(--c-primary));color:#fff;box-shadow:0 8px 24px rgb(var(--c-primary)/.4);opacity:0;visibility:hidden;transform:translateY(8px);transition:opacity .2s,visibility .2s,transform .2s;z-index:50}' +
       '#cvf-top.show{opacity:1;visibility:visible;transform:none}' +
-      '@media(max-width:640px){.cvf-main{gap:28px}.cvf-cols{gap:32px}}';
+      '@media(max-width:640px){.cvf-main{gap:28px}.cvf-cols{gap:32px}.cvf-bottom{justify-content:center;text-align:center}.cvf-copy{flex:1 1 100%}}';
     document.head.appendChild(s);
   }
 
@@ -107,14 +113,63 @@
     injectStyle();
     var year = new Date().getFullYear();
     var copy = String(cfg.copyright || '').replace(/\{year\}/g, year);
+
+    // Full-bleed accent: turn the host <footer>'s top border into the gradient
+    // so it spans the full page width and clearly separates the footer. Falls
+    // back to an in-content bar when there's no <footer> ancestor.
+    var footerEl = el.closest ? el.closest('footer') : null;
     var html = '<div class="cvf">';
-    if (cfg.accent !== false) html += '<div class="cvf-accent"></div>';
+    if (cfg.accent !== false && footerEl) {
+      footerEl.style.borderTopWidth = '3px';
+      footerEl.style.borderTopStyle = 'solid';
+      footerEl.style.borderImage = 'linear-gradient(90deg,rgb(var(--c-primary)),rgb(var(--c-accent,var(--c-primary)))) 1';
+    } else if (cfg.accent !== false) {
+      html += '<div class="cvf-accent"></div>';
+    }
     html += '<div class="cvf-main">' + brandHtml(cfg.info) + columnsHtml(cfg.columns) + '</div>';
-    if (copy) html += '<div class="cvf-bottom"><span>' + esc(copy) + '</span></div>';
+    // Always render the bottom bar — it hosts the copyright AND adopted utility
+    // links (RSS, Privacy choices) from sibling footer extensions.
+    html += '<div class="cvf-bottom">' + (copy ? '<span class="cvf-copy">' + esc(copy) + '</span>' : '<span class="cvf-copy"></span>') + '<span class="cvf-utility"></span></div>';
     html += '</div>';
     el.innerHTML = html;
 
+    adoptUtilityLinks(el);
     if (cfg.backToTop !== false) addBackToTop();
+  }
+
+  /**
+   * Pull sibling forum:footer slot links (RSS, Privacy choices, …) into our
+   * bottom utility bar so they read as a deliberate footer row instead of loose
+   * centered links. Re-runs briefly via an observer for links added after us.
+   */
+  function adoptUtilityLinks(el) {
+    var container = el.parentElement;
+    var bar = el.querySelector('.cvf-utility');
+    if (!container || !bar) return;
+
+    function adopt() {
+      var sibs = container.querySelectorAll('[data-convoro-ext]');
+      for (var i = 0; i < sibs.length; i++) {
+        var sib = sibs[i];
+        if (sib === el || el.contains(sib)) continue;
+        var links = sib.querySelectorAll('a');
+        for (var j = 0; j < links.length; j++) {
+          var a = links[j];
+          a.removeAttribute('style');
+          a.classList.add('cvf-util-link');
+          bar.appendChild(a);
+        }
+        sib.style.display = 'none';
+      }
+    }
+
+    adopt();
+    // Catch links injected by slower sibling extensions for a few seconds.
+    try {
+      var obs = new MutationObserver(adopt);
+      obs.observe(container, { childList: true, subtree: true });
+      setTimeout(function () { obs.disconnect(); }, 6000);
+    } catch (e) { /* no observer — initial adopt is enough */ }
   }
 
   function addBackToTop() {

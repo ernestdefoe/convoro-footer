@@ -1,7 +1,7 @@
 {
   "id": "convoro-footer",
   "name": "Footer Builder",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A fully configurable, theme-matched site footer: brand column with logo and social buttons, up to four link columns, a copyright bar and an optional back-to-top button. Live preview in the admin editor.",
   "author": "Convoro",
   "convoro": ">=0.1.0",

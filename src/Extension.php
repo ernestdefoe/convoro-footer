@@ -296,18 +296,33 @@ function build(){
   var c3=document.createElement('div');c3.className='card';c3.innerHTML='<h2>Copyright</h2>';
   c3.appendChild(field('Bottom-bar text (use {year} for the current year)',CFG.copyright,function(v){CFG.copyright=v;}));
   ed.appendChild(c3);
+
+  // Any structural change (add/remove rows) rebuilds + autosaves.
+  if(ready) scheduleSave();
 }
+
+// ── Save + autosave ─────────────────────────────────────────────────────────
+var ready=false, saving=false, pending=false, saveTimer=null;
+function setStatus(t,clearAfter){var st=document.getElementById('status');st.textContent=t;if(clearAfter){setTimeout(function(){if(st.textContent===t)st.textContent='';},clearAfter);}}
+function doSave(){
+  saving=true;setStatus('Saving…');
+  fetch('/admin/ext/footer',{method:'POST',headers:{'X-CSRF-TOKEN':csrf,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({config:CFG})})
+   .then(function(r){return r.ok?r.json():null;})
+   .then(function(d){saving=false;if(d&&d.ok){setStatus('All changes saved ✓',2500);}else{setStatus('Couldn’t save — retry');}if(pending){pending=false;doSave();}})
+   .catch(function(){saving=false;setStatus('Couldn’t save — retry');});
+}
+function scheduleSave(){setStatus('Saving…');clearTimeout(saveTimer);saveTimer=setTimeout(function(){if(saving){pending=true;}else{doSave();}},900);}
 
 document.getElementById('lightBtn').addEventListener('click',function(){document.getElementById('preview').classList.remove('dark');});
 document.getElementById('darkBtn').addEventListener('click',function(){document.getElementById('preview').classList.add('dark');});
-document.getElementById('save').addEventListener('click',function(){
-  var st=document.getElementById('status');st.textContent='Saving…';
-  fetch('/admin/ext/footer',{method:'POST',headers:{'X-CSRF-TOKEN':csrf,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({config:CFG})})
-   .then(function(r){return r.ok?r.json():null;})
-   .then(function(d){if(d&&d.config){CFG=d.config;st.textContent='Saved ✓';setTimeout(function(){st.textContent='';},2000);}else{st.textContent='Error saving';}})
-   .catch(function(){st.textContent='Error saving';});
-});
+// Explicit save (immediate), plus debounced autosave on any field edit.
+document.getElementById('save').addEventListener('click',function(){clearTimeout(saveTimer);doSave();});
+var edEl=document.getElementById('editor');
+edEl.addEventListener('input',function(){if(ready)scheduleSave();});
+edEl.addEventListener('change',function(){if(ready)scheduleSave();});
+
 build();renderPreview();
+ready=true;
 </script>
 </body></html>
 HTML;
